@@ -17,8 +17,8 @@ import freechips.rocketchip.prci.{ClockSinkParameters}
 import scala.reflect.ClassTag
 
 
-case class RocketTileParams[+T](
-    fac:(RocketTileParams[T],TileCrossingParamsLike, LookupByHartIdImpl,Parameters)=>T,
+case class RocketTileParams(
+    fac:(RocketTileParams,TileCrossingParamsLike, LookupByHartIdImpl,Parameters)=>RocketTile,
     core: RocketCoreParams = RocketCoreParams(),
     icache: Option[ICacheParams] = Some(ICacheParams()),
     dcache: Option[DCacheParams] = Some(DCacheParams()),
@@ -40,7 +40,7 @@ case class RocketTileParams[+T](
 }
 
 class RocketTile private(
-      val rocketParams: RocketTileParams[RocketTile],
+      val rocketParams: RocketTileParams,
       crossing: ClockCrossingType,
       lookup: LookupByHartIdImpl,
       q: Parameters)
@@ -52,7 +52,7 @@ class RocketTile private(
     with HasICacheFrontend
 {
   // Private constructor ensures altered LazyModule.p is used implicitly
-  def this(params: RocketTileParams[RocketTile], crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters) =
+  def this(params: RocketTileParams, crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters) =
     this(params, crossing.crossingType, lookup, p)
 
   val intOutwardNode = IntIdentityNode()
