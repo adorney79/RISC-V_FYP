@@ -17,7 +17,13 @@ import chisel3.util.HasBlackBoxInline
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.diplomaticobjectmodel.model._
 import freechips.rocketchip.diplomaticobjectmodel.logicaltree.LogicalTreeNode
+import chisel3.experimental.IO
+// See LICENSE.Berkeley for license details.
+// See LICENSE.SiFive for license details.
+trait scie_io extends HasBlackBoxInline{
+    val io:SCIEPipelinedInterface
 
+}
 // class BitRocket(tile:RocketTile)(implicit p: Parameters) extends Rocket(tile)(p){
 //   override val usingSCIE: Boolean = true
 //    override val rocketImpl.ex_scie_unpipelined_wdata = if (!rocketParams.useSCIE) 0.U else {
@@ -39,12 +45,12 @@ import freechips.rocketchip.diplomaticobjectmodel.logicaltree.LogicalTreeNode
 
 // }
 
-class SCIEBitCount(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with HasBlackBoxInline {
-  val io = IO(new SCIEPipelinedInterface(xLen))
+class SCIEBitCount(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_io {
+  override val io = IO(new SCIEPipelinedInterface(xLen))
 
   setInline("SCIEPipelined.v",
     s"""
-      |module SCIEPipelined #(parameter XLEN = 32) (
+      |module SCIEBitCount #(parameter XLEN = 32) (
       |    input clock,
       |    input valid,
       |    input [${SCIE.iLen-1}:0] insn,
@@ -56,11 +62,11 @@ class SCIEBitCount(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with HasBlac
       |    reg [XLEN-1:0] result;
       |    always @(posedge clock)
       |    begin
-      |    result={XLEN{1'b0};
+      |    result={XLEN{1'b0}};
       |    for (i=0; i<XLEN; i=i+1) begin
-	    |      if (rs1[i]==1’b1) begin
-		  |        result=result+1;
-	    |        end
+      |      if (rs1[i]==1'b1) begin
+      |        result=result+1;
+      |        end
       |    end
       |  end
       |  assign rd=result;
@@ -70,13 +76,13 @@ class SCIEBitCount(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with HasBlac
      """.stripMargin)
 }
 
-class BitCountModuleImp(outer: BitCountTile) extends BaseTileModuleImp(outer)
+class BitCountModuleImp(outer: BitCountTile,scieimp:(Int)=>scie_io) extends BaseTileModuleImp(outer)
     with HasMyFpuOpt
     with HasMyRoCCModule
     with HasICacheFrontendModule {
   Annotated.params(this, outer.rocketParams)
 
-  val core = Module(new BitRocket(outer)(outer.p))
+  val core = Module(new BitRocket(outer,scieimp)(outer.p))
 
   // Report unrecoverable error conditions; for now the only cause is cache ECC errors
   outer.reportHalt(List(outer.dcache.module.io.errors))
@@ -152,12 +158,13 @@ case class BitCountTileParams(
     beuAddr: Option[BigInt] = None,
     blockerCtrlAddr: Option[BigInt] = None,
     clockSinkParams: ClockSinkParameters = ClockSinkParameters(),
-    boundaryBuffers: Boolean = false // if synthesized with hierarchical PnR, cut feed-throughs?
+    boundaryBuffers: Boolean = false ,// if synthesized with hierarchical PnR, cut feed-throughs?
+    imp: (BitCountTile)=>BitCountModuleImp,
     ) extends InstantiableTileParams[BitCountTile] {
   require(icache.isDefined)
   require(dcache.isDefined)
   def instantiate(crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters): BitCountTile = {
-    new BitCountTile(this, crossing, lookup)
+    new BitCountTile(this, crossing, lookup,(imp))
   }
 }
 
@@ -168,7 +175,8 @@ class BitCountTile private(
       val rocketParams: BitCountTileParams,
       crossing: ClockCrossingType,
       lookup: LookupByHartIdImpl,
-      q: Parameters)
+      q: Parameters,
+      imp: (BitCountTile)=>BitCountModuleImp)
     extends BaseTile(rocketParams, crossing, lookup, q)
     with SinksExternalInterrupts
     with SourcesExternalNotifications
@@ -177,8 +185,8 @@ class BitCountTile private(
     with HasICacheFrontend
 {
   // Private constructor ensures altered LazyModule.p is used implicitly
-  def this(params: BitCountTileParams, crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters) =
-    this(params, crossing.crossingType, lookup, p)
+  def this(params: BitCountTileParams, crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl,imp:(BitCountTile)=>BitCountModuleImp)(implicit p: Parameters) =
+    this(params, crossing.crossingType, lookup, p,imp)
 
   val intOutwardNode = IntIdentityNode()
   val slaveNode = TLIdentityNode()
@@ -233,7 +241,7 @@ class BitCountTile private(
     Resource(cpuDevice, "reg").bind(ResourceAddress(staticIdForMetadataUseOnly))
   }
 
-  override lazy val module = new BitCountModuleImp(this)
+  override lazy val module = imp(this)
 
   override def makeMasterBoundaryBuffers(crossing: ClockCrossingType)(implicit p: Parameters) = crossing match {
     case _: RationalCrossing =>
@@ -406,13 +414,16 @@ object MyOMISA {
     )
   }
 }
-class WithBitcountCores (n: Int, overrideIdOffset: Option[Int] = None) extends Config((site, here, up) => {
-   case TilesLocated(InSubsystem) => {
+class WithBitcountCores(n: Int = 1, overrideIdOffset: Option[Int] = None,scie:(Int)=>scie_io) extends Config((site, here, up) => {
+case TilesLocated(InSubsystem) => {
     val prev = up(TilesLocated(InSubsystem), site)
     val idOffset = overrideIdOffset.getOrElse(prev.size)
-    val big = BitCountTileParams(
-      // (a:RocketTileParams,b:TileCrossingParamsLike,c:LookupByHartIdImpl,q:Parameters)=>new BitCountTile(a,b,c)(q),
-      core   = RocketCoreParams(mulDiv = Some(MulDivParams(
+    (0 until n).map { i =>
+    MyTileAttachParams(
+    tileParams=  BitCountTileParams(
+      hartId = i + idOffset,
+      core   = RocketCoreParams(useSCIE = true,
+      mulDiv = Some(MulDivParams(
         mulUnroll = 8,
         mulEarlyOut = true,
         divEarlyOut = true))),
@@ -422,16 +433,24 @@ class WithBitcountCores (n: Int, overrideIdOffset: Option[Int] = None) extends C
         blockBytes = site(CacheBlockBytes))),
       icache = Some(ICacheParams(
         rowBits = site(SystemBusKey).beatBits,
-        blockBytes = site(CacheBlockBytes))))
-    List.tabulate(n)(i => big.copy(hartId = i + idOffset)) ++ prev
+        blockBytes = site(CacheBlockBytes))),
+        imp=(b:BitCountTile)=>new BitCountModuleImp(b,scie)
+        ),
+    crossingParams= RocketCrossingParams()
+    )
+    }++ prev
   }
 })
+
+
 case object BitCountTilesKey extends Field[Seq[BitCountTileParams]](Nil)
 
 case class MyTileAttachParams(
   tileParams: BitCountTileParams,
-  crossingParams: RocketCrossingParams
+  crossingParams: RocketCrossingParams,
 ) extends CanAttachTile {
   type TileType = BitCountTile
   val lookup = PriorityMuxHartIdFromSeq(Seq(tileParams))
+
 }
+

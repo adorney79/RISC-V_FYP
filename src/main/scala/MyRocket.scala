@@ -1,4 +1,6 @@
 package  risc_v_fyp
+// See LICENSE.Berkeley for license details.
+// See LICENSE.SiFive for license details.
 import Chisel._
 import Chisel.ImplicitConversions._
 import chisel3.withClock
@@ -10,7 +12,8 @@ import freechips.rocketchip.util.property._
 import freechips.rocketchip.scie._
 import scala.collection.mutable.ArrayBuffer
 import freechips.rocketchip.rocket._
-class BitRocket(tile: BitCountTile)(implicit p: Parameters) extends CoreModule()(p)
+import chisel3.util.HasBlackBoxInline
+class BitRocket(tile: BitCountTile,scieimp:(Int)=>scie_io )(implicit p: Parameters) extends CoreModule()(p)
     with HasRocketCoreParameters
     with HasCoreIO {
 
@@ -301,7 +304,7 @@ class BitRocket(tile: BitCountTile)(implicit p: Parameters) extends CoreModule()
     u.io.rd
   }
   val mem_scie_pipelined_wdata = if (!rocketParams.useSCIE) 0.U else {
-    val u = Module(new SCIEBitCount(xLen))
+    val u = Module(scieimp(xLen))
     u.io.clock := Module.clock
     u.io.valid := ex_reg_valid && ex_scie_pipelined
     u.io.insn := ex_reg_inst
