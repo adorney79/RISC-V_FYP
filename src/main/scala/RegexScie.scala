@@ -26,31 +26,14 @@ import freechips.rocketchip.diplomacy.LazyModuleImp
 import freechips.rocketchip.diplomacy.LazyModule
 import chisel3.util.PopCount
 
-class SCIESQRT(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_io {
+
+
+class PipelinedRegex(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_io {
   override val io = IO(new SCIEPipelinedInterface(xLen))
 
   setInline("SCIEPipelined.v",
     s"""
-         |module SCIESQRT #(parameter XLEN = 32) (
-         |    input clock,
-         |    input valid,
-         |    input [${SCIE.iLen-1}:0] insn,
-         |    input [XLEN-1:0] rs1,
-         |    input [XLEN-1:0] rs2,
-         |    output [XLEN-1:0] rd);
-         |    wire [31:0] result =32'h5F3759DF-(rs1[31:0]>>1);
-         |    assign rd=result;
-         |
-         |
-         |endmodule
-     """.stripMargin)
-}
-class PipelinedSQRT(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_io {
-  override val io = IO(new SCIEPipelinedInterface(xLen))
-
-  setInline("SCIEPipelined.v",
-    s"""
-         |module PipelinedSQRT #(parameter XLEN = 32) (
+         |module PipelinedRegex #(parameter XLEN = 32) (
          |    input clock,
          |    input valid,
          |    input [${SCIE.iLen-1}:0] insn,
@@ -77,8 +60,8 @@ class PipelinedSQRT(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_i
          |  */
          |
          |  integer i;
-         |  reg [31:0] shifter;
-         |  reg [31:0] result;
+         |  reg [31:0] stage;
+         |  reg [31:0] substage;
          |
          |
          |  always @(posedge clock)
@@ -99,8 +82,8 @@ class PipelinedSQRT(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_i
          |endmodule
      """.stripMargin)
 }
-case object SQRTTilesKey extends Field[Seq[BitCountTileParams]](Nil)
-case class SQRTAttachParams(
+case object RegexTilesKey extends Field[Seq[BitCountTileParams]](Nil)
+case class RegexAttachParams(
   tileParams: BitCountTileParams,
   crossingParams: RocketCrossingParams,
 ) extends CanAttachTile {
@@ -108,3 +91,4 @@ case class SQRTAttachParams(
   val lookup = PriorityMuxHartIdFromSeq(Seq(tileParams))
 
 }
+
