@@ -172,7 +172,8 @@ class MatrixModule2(outer: MatrixRoCC2)(implicit p: Parameters)
 extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   //val regfile = Mem(4, UInt(xLen.W))
   val rows = Mem(64,UInt(64.W))
-  val cols = Mem(4096,UInt(64.W))
+  // val cols = Mem(4096,UInt(64.W))
+  val cols = Mem(1048576,UInt(64.W))
   val stored=RegInit(false.B)
   val counter=RegInit(0.U(log2Ceil(64).W))
   val busy=RegInit(false.B)
@@ -296,14 +297,12 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
       }
 
         is(read_col){
-            io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write)&& current_row=/=x_height
+            io.mem.req.valid:=  row_idx=/=y_height-1.U && current_col=/=y_len-1.U
             io.mem.req.bits.addr:=(y_len*offset)*row_idx+current_col*offset+y_addr
             io.mem.req.bits.tag:=counter
             when(io.mem.req.valid && io.mem.req.ready){
               counter:=counter+1.U
-                when(row_idx===y_height-1.U && current_col===y_len-1.U ){
-                   state:=recv_col
-                }.elsewhen(row_idx===y_height-1.U){
+              when(row_idx===y_height-1.U){
                   current_col:=current_col+1.U
                   row_idx:=0.U
                 }.otherwise{
@@ -312,20 +311,15 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
 
             }
           cols(resp_tag):=io.mem.resp.bits.data
-      
+          when(!io.mem.req.valid && !io.mem.resp.valid){
+            stored:=true.B
+            state:=calculate
+            current_col:=0.U
+            row_idx:=0.U
+            counter:=0.U
 
-        }
-        is(recv_col){
-            cols(resp_tag):=io.mem.resp.bits.data
-        
-        when(!io.mem.resp.valid){
-          io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write)&& current_row=/=x_height
-          stored:=true.B
-          state:=calculate
-          current_col:=0.U
-          row_idx:=0.U
-          counter:=0.U
-        }
+          }
+
         }
         is(calculate){
           when(row_idx===x_len){
