@@ -588,7 +588,7 @@ class BitRocket(tile: BitCountTile,scieimp:(Int)=>scie_io )(implicit p: Paramete
 
   // hook up control/status regfile
   csr.io.ungated_clock := clock
-  csr.io.decode(0).csr := id_raw_inst(0)(31,20)
+  csr.io.decode(0).inst := id_inst(0)
   csr.io.exception := wb_xcpt
   csr.io.cause := wb_cause
   csr.io.retire := wb_valid
