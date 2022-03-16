@@ -493,7 +493,7 @@ class BitRocket(tile: BitCountTile,scieimp:(Int)=>scie_io )(implicit p: Paramete
   val fpu_kill_mem = mem_reg_valid && mem_ctrl.fp && io.fpu.nack_mem
   val replay_mem  = dcache_kill_mem || mem_reg_replay || fpu_kill_mem
   val killm_common = dcache_kill_mem || take_pc_wb || mem_reg_xcpt || !mem_reg_valid
-  div.io.kill := killm_common && Reg(next = div.io.req.fire())
+  div.io.kill := killm_common && Reg(next = div.io.req.fire)
   val ctrl_killm = killm_common || mem_xcpt || fpu_kill_mem
 
   // writeback stage
@@ -557,10 +557,10 @@ class BitRocket(tile: BitCountTile,scieimp:(Int)=>scie_io )(implicit p: Paramete
   div.io.resp.ready := !wb_wxd
   val ll_wdata = Wire(init = div.io.resp.bits.data)
   val ll_waddr = Wire(init = div.io.resp.bits.tag)
-  val ll_wen = Wire(init = div.io.resp.fire())
+  val ll_wen = Wire(init = div.io.resp.fire)
   if (usingRoCC) {
     io.rocc.resp.ready := !wb_wxd
-    when (io.rocc.resp.fire()) {
+    when (io.rocc.resp.fire) {
       div.io.resp.ready := Bool(false)
       ll_wdata := io.rocc.resp.bits.data
       ll_waddr := io.rocc.resp.bits.rd
@@ -632,7 +632,7 @@ class BitRocket(tile: BitCountTile,scieimp:(Int)=>scie_io )(implicit p: Paramete
   def id_sboard_clear_bypass(r: UInt) = {
     // ll_waddr arrives late when D$ has ECC, so reshuffle the hazard check
     if (!tileParams.dcache.get.dataECC.isDefined) ll_wen && ll_waddr === r
-    else div.io.resp.fire() && div.io.resp.bits.tag === r || dmem_resp_replay && dmem_resp_xpu && dmem_resp_waddr === r
+    else div.io.resp.fire && div.io.resp.bits.tag === r || dmem_resp_replay && dmem_resp_xpu && dmem_resp_waddr === r
   }
   val id_sboard_hazard = checkHazards(hazard_targets, rd => sboard.read(rd) && !id_sboard_clear_bypass(rd))
   sboard.set(wb_set_sboard && wb_wen, wb_waddr)
