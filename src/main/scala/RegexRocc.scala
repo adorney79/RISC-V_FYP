@@ -30,7 +30,7 @@ class WithRegexRoCC extends Config ((site, here, up) => {
 class RegexModule(outer: RegexRoCC)(implicit p: Parameters)
 extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val cmd = Queue(io.cmd)
-  val mem=Mem(100,UInt(8.W))
+  val mem=Mem(3000,UInt(8.W))
   // val test=cmd.bits.rs2
   val current=RegInit(0.U(64.W))
   val funct = cmd.bits.inst.funct
@@ -39,18 +39,31 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val pointer=RegInit(0.U(64.W))
   val test=RegInit(0.U(8.W))
   val backtrack=RegInit(0.U(64.W))
+  val backtrack2=RegInit(0.U(64.W))
+  val backtrack3=RegInit(0.U(64.W))
   val success=RegInit(false.B)
   val done=RegInit(false.B)
+  val dont_care=RegInit(false.B)
   val counter=RegInit(0.U(32.W))
+  val overflow=RegInit(0.U(8.W))
+
   val resp_tag=io.mem.resp.bits.tag
   val set_addr = funct === 1.U
   val doResp=(funct===2.U) 
   val doLoad = funct === 4.U
   val stallLoad = doLoad && !io.mem.req.ready
   val stallResp = doResp && !io.resp.ready
-  
+  val lst=VecInit('S'.toInt.U,'&'.toInt.U,'a'.toInt.U,'m'.toInt.U,'p'.toInt.U,';'.toInt.U,'P'.toInt.U,
+                  ' '.toInt.U,'5'.toInt.U,'0'.toInt.U,'0'.toInt.U,'"'.toInt.U,'r'.toInt.U,'e'.toInt.U,
+                  'g'.toInt.U,'u'.toInt.U,'l'.toInt.U,'a'.toInt.U,'r'.toInt.U,'M'.toInt.U,'a'.toInt.U,
+                  'r'.toInt.U,'k'.toInt.U,'e'.toInt.U,'t'.toInt.U,'P'.toInt.U,'r'.toInt.U,'i'.toInt.U,
+                  'c'.toInt.U,'e'.toInt.U,'v'.toInt.U,'a'.toInt.U,'l'.toInt.U,'u'.toInt.U,'e'.toInt.U,'='.toInt.U,
+                  '"'.toInt.U)
+
+  val lst_idx=RegInit(0.U(32.W))
+  val lst_len=37.U
   val value=mem(pointer)
-  val idle::read_char::receive_char::m1::m2::m3::m4::m5::m6::ready::Nil=Enum(7)
+  val idle::read_char::receive_char::m1::m2::match_any1::match_any2::potential1::potential2::ready::Nil=Enum(10)
   val state=RegInit(idle)
   val busy=RegInit(false.B)
 
@@ -58,8 +71,8 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
     busy := true.B
   }
 
-  io.mem.req.valid:=  (state===read_char) && (io.mem.req.bits.addr <= stop) && !done
-  io.mem.req.bits.addr:=start+counter
+  io.mem.req.valid:=  (state===read_char) && (io.mem.req.bits.addr <= stop) && !done && counter=/=63.U
+  io.mem.req.bits.addr:=start+counter+(overflow*63.U)
   io.mem.req.bits.tag := counter
   io.mem.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
   io.mem.req.bits.size := 0.U
@@ -92,11 +105,18 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
       }
     }
       is(read_char){
+
         when(io.mem.req.valid && io.mem.req.ready){
           counter:=counter+1.U
         }
-        mem(resp_tag):=io.mem.resp.bits.data
-        when(!io.mem.req.valid && !io.mem.resp.valid){
+        when(counter===63.U){
+                when(resp_tag===62.U){
+                  overflow:=overflow+1.U
+                  counter:=0.U
+                }
+              }
+        mem(resp_tag+(overflow*63.U)):=io.mem.resp.bits.data
+        when(!io.mem.req.valid && !io.mem.resp.valid && counter=/=63.U){
             counter:=0.U
             state:=m1
             test:=mem(pointer)
@@ -105,9 +125,10 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
       }
       is(m1){
         test:=mem(pointer)
-        when(test=== ('a'.toInt).U){
+        when(test=== lst(0.U)){
           backtrack:=pointer
           pointer:=pointer +1.U
+          lst_idx:=lst_idx+1.U
           state:=m2
 
         }.elsewhen(pointer>(stop-start)){
@@ -122,28 +143,82 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
       }
       is(m2){
         test:=mem(pointer)
-        when(test===('b'.toInt).U){
+        when(lst_idx===12.U){
+          state:=match_any1
+          pointer:=pointer-1.U
+        }
+        .elsewhen(test===lst(lst_idx)){
           pointer:=pointer+1.U
-          state:=m3
+          lst_idx:=lst_idx+1.U
         }.otherwise{
-          pointer:=backtrack + 1.U
-          test:=mem(backtrack + 1.U)
+          pointer:=backtrack 
+          lst_idx:=0.U
           state:=m1
         }
       }
-      is(m3){
+    
+     is(match_any1){
         test:=mem(pointer)
-        when(test===('c'.toInt).U){
+        when(pointer>(stop-start)){
+          pointer:=backtrack 
+          lst_idx:=0.U
+          state:=m1
+        }
+        .elsewhen(test===lst(12.U)){
+          state:=potential1
+          lst_idx:=lst_idx+1.U
+          backtrack2:=pointer
+        }
+        pointer:=pointer+1.U
+        
+
+     }
+     is(potential1){
+       test:=mem(pointer)
+        when(lst_idx===30.U){
+          state:=match_any2
+          pointer:=pointer-1.U
+        }
+        .elsewhen(test===lst(lst_idx)){
+          pointer:=pointer+1.U
+          lst_idx:=lst_idx+1.U
+        }.otherwise{
+          pointer:=backtrack2 
+          lst_idx:=12.U
+          state:=match_any1
+        }
+     }
+     is(match_any2){
+        test:=mem(pointer)
+        when(pointer>(stop-start)){
+          pointer:=backtrack 
+          lst_idx:=12.U
+          state:=match_any1
+        }
+        .elsewhen(test===lst(30.U)){
+          state:=potential2
+          lst_idx:=lst_idx+1.U
+          backtrack3:=pointer
+        }
+        pointer:=pointer+1.U
+     }
+      is(potential2){
+       test:=mem(pointer)
+        when(lst_idx===lst_len){
           success:=true.B
           done:=true.B
           busy:=false.B
           state:=ready
-        }.otherwise{
-          pointer:=backtrack + 1.U
-          test:=mem(backtrack + 1.U)
-          state:=m1
         }
-      }
+        .elsewhen(test===lst(lst_idx)){
+          pointer:=pointer+1.U
+          lst_idx:=lst_idx+1.U
+        }.otherwise{
+          pointer:=backtrack3 
+          lst_idx:=30.U
+          state:=match_any2
+        }
+     }
       is(ready){
           when(io.resp.fire){
             start:=0.U
