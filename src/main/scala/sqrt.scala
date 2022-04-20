@@ -26,6 +26,7 @@ import freechips.rocketchip.diplomacy.LazyModuleImp
 import freechips.rocketchip.diplomacy.LazyModule
 import chisel3.util.PopCount
 
+//instruction to perfrom the bit operations of fast inverse
 class SCIESQRT(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_io {
   override val io = IO(new SCIEPipelinedInterface(xLen))
 
@@ -45,6 +46,9 @@ class SCIESQRT(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_io {
          |endmodule
      """.stripMargin)
 }
+
+// a pipelined version of fast inverse.
+// the compiler appears to optimise the original version to achieve this result anyway
 class PipelinedSQRT(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_io {
   override val io = IO(new SCIEPipelinedInterface(xLen))
 
@@ -57,24 +61,6 @@ class PipelinedSQRT(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_i
          |    input [XLEN-1:0] rs1,
          |    input [XLEN-1:0] rs2,
          |    output [XLEN-1:0] rd);
-         |
-         |  /* This example SCIE implementation provides the following instructions:
-         |
-         |     Major opcode custom-0:
-         |     Funct3 = 2: AD.U8, compute absolute differences of packed uint8
-         |       rd[7:0] = abs(rs1[7:0] - rs2[7:0])
-         |       rd[15:8] = abs(rs1[15:8] - rs2[15:8])
-         |       ...
-         |       rd[XLEN-1:XLEN-8] = abs(rs1[XLEN-1:XLEN-8] - rs2[XLEN-1:XLEN-8])
-         |
-         |     Funct3 = 3: SAD.U8, compute sum of absolute differences of packed uint8
-         |       tmp[7:0] = abs(rs1[7:0] - rs2[7:0])
-         |       tmp[15:8] = abs(rs1[15:8] - rs2[15:8])
-         |       ...
-         |       tmp[XLEN-1:XLEN-8] = abs(rs1[XLEN-1:XLEN-8] - rs2[XLEN-1:XLEN-8])
-         |
-         |       rd = tmp[7:0] + tmp[15:8] + ... + tmp[XLEN-1:XLEN-8]
-         |  */
          |
          |  integer i;
          |  reg [31:0] shifter;
@@ -99,12 +85,12 @@ class PipelinedSQRT(xLen: Int) extends BlackBox(Map("XLEN" -> xLen)) with scie_i
          |endmodule
      """.stripMargin)
 }
-case object SQRTTilesKey extends Field[Seq[BitCountTileParams]](Nil)
+case object SQRTTilesKey extends Field[Seq[SCIETileParams]](Nil)
 case class SQRTAttachParams(
-  tileParams: BitCountTileParams,
+  tileParams: SCIETileParams,
   crossingParams: RocketCrossingParams,
 ) extends CanAttachTile {
-  type TileType = BitCountTile
+  type TileType = SCIETile
   val lookup = PriorityMuxHartIdFromSeq(Seq(tileParams))
 
 }

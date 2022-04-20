@@ -1,6 +1,5 @@
 package  risc_v_fyp
-// See LICENSE.Berkeley for license details.
-// See LICENSE.SiFive for license details.
+
 import Chisel._
 import Chisel.ImplicitConversions._
 import chisel3.withClock
@@ -13,7 +12,12 @@ import freechips.rocketchip.scie._
 import scala.collection.mutable.ArrayBuffer
 import freechips.rocketchip.rocket._
 import chisel3.util.HasBlackBoxInline
-class BitRocket(tile: BitCountTile,scieimp:(Int)=>scie_io )(implicit p: Parameters) extends CoreModule()(p)
+
+// Note: the majority of this code is not my own and is from the rocket chip repository
+// This is an altered version of the Rocket class that takes an SCIE implementation in its top
+// level constructor. Any updates to the rocket chip codebase are likely to break this implementation.
+
+class SCIERocket(tile: SCIETile,scieimp:(Int)=>scie_io )(implicit p: Parameters) extends CoreModule()(p)
     with HasRocketCoreParameters
     with HasCoreIO {
 

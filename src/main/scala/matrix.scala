@@ -12,6 +12,10 @@ import freechips.rocketchip.rocket._
 import chisel3.VecInit
 import chisel3.chiselTypeOf
 
+// this file contains all the matrix multiplication designs
+// all these designs use 64 bit numbers but could easily be adapted to accept any size number
+// through an additional setup instruction. Floating point operations could also be added by simply
+// using the FPU interface.
 class MatrixRoCC(opcodes:OpcodeSet,nPTWPorts:Int,usesFPU:Boolean)
 (implicit p: Parameters) extends LazyRoCC(opcodes,nPTWPorts,usesFPU){
     override lazy val module=new MatrixModule(this)
@@ -73,10 +77,9 @@ class WithSumReduce extends Config ((site, here, up) => {
     }
   )
 })
+// a design with limited resources
 class MatrixModule(outer: MatrixRoCC)(implicit p: Parameters)
 extends LazyRoCCModuleImp(outer) with HasCoreParameters{
-  //val regfile = Mem(4, UInt(xLen.W))
-  // val busy = RegInit(VecInit(Seq.fill(4){false.B}))
   val busy=RegInit(false.B)
   val cmd = Queue(io.cmd)
   val funct = cmd.bits.inst.funct
@@ -94,7 +97,6 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val done=RegInit(false.B)
   val doResp = cmd.bits.inst.xd
   val stallResp = doResp && !io.resp.ready
-  //val sending :: reading  ::ready::idle::receiving::Nil = Enum(5)
   val offset=8.U
   val idle::read_row::recv_row::read_col::recv_col::calculate::write::inter::Nil=Enum(8)
   val state = RegInit(idle)
@@ -112,7 +114,6 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val current_col=RegInit(0.U(64.W))
   val row_idx=RegInit(0.U(64.W))
   val row_val=RegInit(0.U(64.W))
-  // io.mem.req.valid := cmd.valid && doLoad && !busy && !stallResp
   when(doXdim && !busy){
     x_len:=cmd.bits.rs1
     x_height:=cmd.bits.rs2
@@ -133,16 +134,14 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
     busy := true.B
   }
   io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write)&& current_row=/=x_height
-  // io.mem.req.bits.addr := address
   io.mem.req.bits.tag := 0.U
-  io.mem.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
+  io.mem.req.bits.cmd := M_XRD // perform a load 
   io.mem.req.bits.size := log2Ceil(8).U
   io.mem.req.bits.signed := false.B
-  io.mem.req.bits.data := 0.U // we're not performing any stores...
+  io.mem.req.bits.data := 0.U 
   io.mem.req.bits.phys := false.B
   io.mem.req.bits.dprv := cmd.bits.status.dprv
   
-  //cmd.ready := !busy 
   cmd.ready := !busy && !stallLoad && !stallResp
   io.resp.valid := cmd.valid && doResp && !busy && done && io.mem.resp.bits.data===0.U
   io.resp.bits.rd := cmd.bits.inst.rd
@@ -151,12 +150,14 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   io.busy := busy
   io.interrupt := false.B
   switch(state){
+    //wait for result address to start
       is(idle){
         when(z_addr=/=0.U){
           state:=read_row
           busy:=true.B
         }
       }
+      // unless we're finished, request the next value in the current row
       is(read_row){
         when(current_row===x_height){
           z_addr:=0.U
@@ -171,12 +172,14 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
             }
         }
       }
+      //stores value and prepares to request column
       is(recv_row){
         when(io.mem.resp.valid){
             row_val:=io.mem.resp.bits.data
             state:=read_col
         }
       }
+      //requests next value from current column
         is(read_col){
             io.mem.req.bits.cmd:=M_XRD
             io.mem.req.bits.addr:=(y_len*offset)*row_idx+current_col*offset+y_addr
@@ -184,6 +187,7 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
                 state:=recv_col
             }
         }
+        //stores result and prepares for calculation
         is(recv_col){
           when(io.mem.resp.valid){
             row_val:=row_val*io.mem.resp.bits.data
@@ -191,18 +195,22 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
             state:=calculate
         }
         }
+        //if we have the results for a row/column pair we proceed to the write state
+        // otherwise we need more values and return to getting the next row value
         is(calculate){
           current:=current+row_val
             when(row_idx===x_len){
               state:=write
               row_idx:=0.U
-              // current_col:=current_col+1.U
             }.otherwise{
               state:=read_row
             }
         }
+        // we write to a specified address and increment either the row or column
+        // if we're at the final column then we reset the column pointer and increment to the next row.
+        // otherwise we simple proceed to the next column
         is(write){
-          io.mem.req.bits.cmd:=M_XWR
+          io.mem.req.bits.cmd:=M_XWR //used to specify write
           io.mem.req.bits.data:=current
           io.mem.req.bits.addr:=z_addr+x_len*offset*current_row+current_col*offset
           when(io.mem.resp.valid){
@@ -216,24 +224,14 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
             state:=read_row
           }
         }
-        // is(inter){
-        //   current:=0.U
-        //     when(current_col<(y_len-1.U)){
-        //       current_col:=current_col+1.U
-        //     }.otherwise{
-        //         current_row:=current_row+1.U
-        //         current_col:=0.U
-        //     }
-        //   state:=read_row
-        // }
+  
       }
     }
+// memory abundant design
 class MatrixModule2(outer: MatrixRoCC2)(implicit p: Parameters)
 extends LazyRoCCModuleImp(outer) with HasCoreParameters{
-  //val rows = Mem(64,UInt(64.W))
   val rows=Reg(Vec(64, UInt(64.W)))
-  // val cols = Mem(4096,UInt(64.W))
-  //val cols = Mem(1048576,UInt(64.W))
+
   val cols=Reg(Vec(4096, UInt(64.W)))
   val blocksize=64.U
   val stored=RegInit(false.B)
@@ -255,7 +253,6 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val done=RegInit(false.B)
   val doResp = cmd.bits.inst.xd
   val stallResp = doResp && !io.resp.ready
-  //val sending :: reading  ::ready::idle::receiving::Nil = Enum(5)
   val offset=8.U
   val idle::read_row::recv_row::read_col::recv_col::calculate::write::Nil=Enum(7)
   val state = RegInit(idle)
@@ -277,7 +274,6 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val overflow=RegInit(0.U(64.W))
 
 
-  // io.mem.req.valid := cmd.valid && doLoad && !busy && !stallResp
   when(doXdim && !busy){
     x_len:=cmd.bits.rs1
     x_height:=cmd.bits.rs2
@@ -298,21 +294,18 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
     busy := true.B
   }
   io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write)&& current_row=/=x_height
-  // io.mem.req.bits.addr := address
   io.mem.req.bits.tag := 0.U
-  io.mem.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
+  io.mem.req.bits.cmd := M_XRD // perform a load
   io.mem.req.bits.size := log2Ceil(8).U
   io.mem.req.bits.signed := false.B
-  io.mem.req.bits.data := 0.U // we're not performing any stores...
+  io.mem.req.bits.data := 0.U 
   io.mem.req.bits.phys := false.B
   io.mem.req.bits.dprv := cmd.bits.status.dprv
   
-  //cmd.ready := !busy 
   cmd.ready := !busy && !stallLoad && !stallResp
   io.resp.valid := cmd.valid && doResp && !busy && done && io.mem.resp.bits.data===0.U
   io.resp.bits.rd := cmd.bits.inst.rd
-  //io.resp.bits.data := current
-    io.resp.bits.data := rows(1.U)
+  io.resp.bits.data := rows(1.U)
 
   io.busy := busy
   io.interrupt := false.B
@@ -325,7 +318,7 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
 
         }
       }
-
+// unless we're finished, get the next row and store it.
       is(read_row){
         io.mem.req.bits.addr:=(x_len*offset*current_row)+row_idx*offset+x_addr
         io.mem.req.bits.tag:=row_idx
@@ -340,18 +333,11 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
             }.elsewhen(io.mem.req.valid && io.mem.req.ready){
               row_idx:=row_idx+1.U
             }
-            // }.elsewhen(io.mem.req.valid && io.mem.req.ready){
-            //     io.mem.req.bits.cmd:=M_XRD
-            //     io.mem.req.bits.addr:=(x_len*offset*current_row)+row_idx*offset+x_addr
-            //     io.mem.req.bits.tag:=row_idx
-            //     row_idx:=row_idx+1.U
-            // }
-      
+ 
           rows(resp_tag):=io.mem.resp.bits.data
-          // counter:=counter+1.U
       
           when(!io.mem.req.valid && !io.mem.resp.valid){
-            //io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write)&& current_row=/=x_height
+            //if the second matrix is stored already we skip to calculate
             state:=Mux(stored,calculate,read_col)
             counter:=0.U
             row_idx:=0.U
@@ -360,12 +346,10 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
         }
 
       }
-
+//simply reads in entire second matrix into memory
         is(read_col){
-            // io.mem.req.valid:=  row_idx=/=y_height
             io.mem.req.valid:=  row_idx=/=y_height && counter=/=63.U
             io.mem.req.bits.addr:=(y_len*offset)*row_idx+current_col*offset+y_addr
-            //io.mem.req.bits.tag:=y_len*current_col+row_idx
             io.mem.req.bits.tag:=counter
             when(io.mem.req.valid && io.mem.req.ready){
               counter:=counter+1.U
@@ -377,6 +361,7 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
                 }
 
             }
+            //accounting for overflow in tag wire
             when(counter===63.U){
                 overflow:=overflow+1.U
                 when(!io.mem.resp.valid){
@@ -395,6 +380,7 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
           }
 
         }
+      // same as previous design but continues calculating and writing until we finish with the row
         is(calculate){
           io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write)&& current_row=/=x_height
 
@@ -425,10 +411,11 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
 
       }
     }
+
+  //transpose design
 class MatrixModule3(outer: MatrixRoCC3)(implicit p: Parameters)
 extends LazyRoCCModuleImp(outer) with HasCoreParameters{
-  //val regfile = Mem(4, UInt(xLen.W))
-  // val busy = RegInit(VecInit(Seq.fill(4){false.B}))
+
   val busy=RegInit(false.B)
   val cmd = Queue(io.cmd)
   val funct = cmd.bits.inst.funct
@@ -446,7 +433,6 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val done=RegInit(false.B)
   val doResp = cmd.bits.inst.xd
   val stallResp = doResp && !io.resp.ready
-  //val sending :: reading  ::ready::idle::receiving::Nil = Enum(5)
   val offset=8.U
   val idle::read_row::recv_row::read_col::recv_col::calculate::write::read_copy::write_copy::wait_write_copy::wait_read_copy::Nil=Enum(11)
   val state = RegInit(idle)
@@ -466,7 +452,6 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val current_col=RegInit(0.U(64.W))
   val row_idx=RegInit(0.U(64.W))
   val row_val=RegInit(0.U(64.W))
-  // io.mem.req.valid := cmd.valid && doLoad && !busy && !stallResp
   when(doXdim && !busy){
     x_len:=cmd.bits.rs1
     x_height:=cmd.bits.rs2
@@ -488,16 +473,14 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
     busy := true.B
   }
   io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write || state===read_copy || state===write_copy)&& current_row=/=x_height
-  // io.mem.req.bits.addr := address
   io.mem.req.bits.tag := 0.U
-  io.mem.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
+  io.mem.req.bits.cmd := M_XRD // perform a load 
   io.mem.req.bits.size := log2Ceil(8).U
   io.mem.req.bits.signed := false.B
-  io.mem.req.bits.data := 0.U // we're not performing any stores...
+  io.mem.req.bits.data := 0.U 
   io.mem.req.bits.phys := false.B
   io.mem.req.bits.dprv := cmd.bits.status.dprv
   
-  //cmd.ready := !busy 
   cmd.ready := !busy && !stallLoad && !stallResp
   io.resp.valid := cmd.valid && doResp && !busy && done && io.mem.resp.bits.data===0.U
   io.resp.bits.rd := cmd.bits.inst.rd
@@ -512,6 +495,9 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
           busy:=true.B
         }
       }
+      // this section can be a bit tricky to decipher.
+      // essentially it goes row by row in the second matrix, writing each value to a column address
+      // going row by row instead of column by column ensures more cache hits which will speed up this process
       is(read_copy){
         when(io.mem.req.valid && io.mem.req.ready){
           io.mem.req.bits.addr:=(y_len*offset)*row_idx+current_col*offset+y_addr
@@ -552,6 +538,8 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
         
 
       }
+      // from here onwards is the same as design 1 but it reads from rows in each matrix instead of
+      // rows and columns
       is(read_row){
         when(current_row===x_height){
           z_addr:=0.U
@@ -591,7 +579,6 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
             when(row_idx===x_len){
               state:=write
               row_idx:=0.U
-              // current_col:=current_col+1.U
             }.otherwise{
               state:=read_row
             }
@@ -617,13 +604,10 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
 //transpose and use 2 vector registers
 class MatrixModule4(outer: MatrixRoCC4)(implicit p: Parameters)
 extends LazyRoCCModuleImp(outer) with HasCoreParameters{
-  //val rows = Mem(64,UInt(64.W))
   val rows=Reg(Vec(64, UInt(64.W)))
-  // val cols = Mem(4096,UInt(64.W))
-  //val cols = Mem(1048576,UInt(64.W))
+
   val cols=Reg(Vec(64, UInt(64.W)))
   val blocksize=64.U
-  //val stored=RegInit(false.B)
   val counter=RegInit(0.U(7.W))
   val busy=RegInit(false.B)
   val cmd = Queue(io.cmd)
@@ -642,9 +626,7 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val done=RegInit(false.B)
   val doResp = cmd.bits.inst.xd
   val stallResp = doResp && !io.resp.ready
-  //val sending :: reading  ::ready::idle::receiving::Nil = Enum(5)
   val offset=8.U
-  //val idle::read_row::recv_row::read_col::recv_col::calculate::write::Nil=Enum(7)
   val idle::read_row::recv_row::read_col::recv_col::calculate::write::read_copy::write_copy::wait_write_copy::wait_read_copy::Nil=Enum(11)
   val state = RegInit(idle)
   val current = RegInit(0.U(64.W)) 
@@ -666,7 +648,6 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val copy_addr=RegInit(0.U(64.W))
 
 
-  // io.mem.req.valid := cmd.valid && doLoad && !busy && !stallResp
   when(doXdim && !busy){
     x_len:=cmd.bits.rs1
     x_height:=cmd.bits.rs2
@@ -687,18 +668,15 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   when (io.mem.req.fire()) {
     busy := true.B
   }
- // io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write)&& current_row=/=x_height
    io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write || state===read_copy || state===write_copy)&& current_row=/=x_height
-  // io.mem.req.bits.addr := address
   io.mem.req.bits.tag := 0.U
-  io.mem.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
+  io.mem.req.bits.cmd := M_XRD // perform a load 
   io.mem.req.bits.size := log2Ceil(8).U
   io.mem.req.bits.signed := false.B
-  io.mem.req.bits.data := 0.U // we're not performing any stores...
+  io.mem.req.bits.data := 0.U 
   io.mem.req.bits.phys := false.B
   io.mem.req.bits.dprv := cmd.bits.status.dprv
   
-  //cmd.ready := !busy 
   cmd.ready := !busy && !stallLoad && !stallResp
   io.resp.valid := cmd.valid && doResp && !busy && done && io.mem.resp.bits.data===0.U
   io.resp.bits.rd := cmd.bits.inst.rd
@@ -714,6 +692,7 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
           busy:=true.B
         }
       }
+      //same state machine as transpose model
       is(read_copy){
         when(io.mem.req.valid && io.mem.req.ready){
           io.mem.req.bits.addr:=(y_len*offset)*row_idx+current_col*offset+y_addr
@@ -751,7 +730,7 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
             state:=read_copy
           }
       }
-
+// unless we're finished, read a row into a vector register
       is(read_row){
         io.mem.req.bits.addr:=(x_len*offset*current_row)+row_idx*offset+x_addr
         io.mem.req.bits.tag:=row_idx
@@ -768,10 +747,8 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
             }
 
           rows(resp_tag):=io.mem.resp.bits.data
-          // counter:=counter+1.U
       
           when(!io.mem.req.valid && !io.mem.resp.valid){
-            //io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write)&& current_row=/=x_height
             state:=read_col
             counter:=0.U
             row_idx:=0.U
@@ -780,12 +757,10 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
         }
 
       }
-
+// next read a column into the other vector register
         is(read_col){
             io.mem.req.valid:=  row_idx=/=y_height
-            //io.mem.req.bits.addr:=(y_len*offset)*row_idx+current_col*offset+y_addr
             io.mem.req.bits.addr:=(y_len*offset)*current_col+row_idx*offset+copy_addr
-            //io.mem.req.bits.tag:=y_len*current_col+row_idx
             io.mem.req.bits.tag:=row_idx
             when(io.mem.req.valid && io.mem.req.ready){
               row_idx:=row_idx+1.U
@@ -793,16 +768,14 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
             }
           cols(resp_tag):=io.mem.resp.bits.data
           when(!io.mem.req.valid && !io.mem.resp.valid ){
-            //stored:=true.B
             state:=calculate
-            //current_col:=0.U
             row_idx:=0.U
-            //counter:=0.U
             overflow:=0.U
 
           }
 
         }
+        // caclulates dot product of row and column
         is(calculate){
           io.mem.req.valid:=  (!done) && (state===read_row||state===read_col||state===write)&& current_row=/=x_height
 
@@ -814,6 +787,9 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
             row_idx:=row_idx+1.U
           }
         }
+        // writes out to memory and sets up to retrieve the next column provided we
+        // aren't at the last column. This means that every row is stored once but every column
+        // must be loaded in again for however many rows there are.
         is(write){
           io.mem.req.bits.cmd:=M_XWR
           io.mem.req.bits.data:=current
@@ -834,11 +810,11 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
 
       }
     }
-//}
+
+// basic class used for early development that sum reduces an array
 class SumReduceModule(outer: SumReduce)(implicit p: Parameters)
 extends LazyRoCCModuleImp(outer) with HasCoreParameters{
-  //val regfile = Mem(4, UInt(xLen.W))
-  // val busy = RegInit(VecInit(Seq.fill(4){false.B}))
+
   val busy=RegInit(false.B)
   val cmd = Queue(io.cmd)
   val funct = cmd.bits.inst.funct
@@ -858,7 +834,6 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   val current = RegInit(0.U(64.W)) // value index
   val state = RegInit(sending)
   val stop=RegInit(0.U(64.W))
-  // io.mem.req.valid := cmd.valid && doLoad && !busy && !stallResp
   when(doLoad && !busy){
       current:=address
       stop:=address+(len*8)
@@ -867,16 +842,14 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
     busy := true.B
   }
   io.mem.req.valid:=  (!done) && current=/=0.U && stop=/=0.U && (state===receiving)
-  // io.mem.req.bits.addr := address
   io.mem.req.bits.tag := 0.U
-  io.mem.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
+  io.mem.req.bits.cmd := M_XRD // perform a load 
   io.mem.req.bits.size := log2Ceil(8).U
   io.mem.req.bits.signed := false.B
-  io.mem.req.bits.data := 0.U // we're not performing any stores...
+  io.mem.req.bits.data := 0.U 
   io.mem.req.bits.phys := false.B
   io.mem.req.bits.dprv := 3.U
   
-  //cmd.ready := !busy 
   cmd.ready := !busy && !stallLoad && !stallResp
   io.resp.valid := cmd.valid && doResp && !busy && done
   io.resp.bits.rd := cmd.bits.inst.rd

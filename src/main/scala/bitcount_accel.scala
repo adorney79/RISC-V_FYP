@@ -17,6 +17,9 @@ class BitcountRoCC(opcodes:OpcodeSet)
 (implicit p: Parameters) extends LazyRoCC(opcodes){
     override lazy val module=new BitcountModule(this)
 }
+
+// Used for comparison with instruction.
+// just uses the inbuilt popcount class.
 class BitcountModule(outer: BitcountRoCC)(implicit p: Parameters)
 extends LazyRoCCModuleImp(outer) with HasCoreParameters{
     val cmd=Queue(io.cmd)
@@ -39,7 +42,7 @@ class WithBitcountRoCC extends Config ((site, here, up) => {
 })
 
 
-
+//demo design to show basic load/store
 class DemoModule(outer: DemoRoCC)(implicit p: Parameters)
 extends LazyRoCCModuleImp(outer) with HasCoreParameters{
     //user defined values
