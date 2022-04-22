@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "encoding.h"
 
+//basic test for demo class
 static inline unsigned long read()
 {
         unsigned long value;

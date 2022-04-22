@@ -2,8 +2,10 @@
 #include "encoding.h"
 #include <math.h>
 #define NUM_TESTS 100
+#define PRINTSTATS 0
 
-float count(float val){
+//test for inverse root with ISA square root instruction 
+float count(volatile float val){
         float rd;
         rd=1/sqrt(val);
         return rd;
@@ -12,12 +14,15 @@ int main(){
         unsigned long start, end;
         start=rdcycle();
         float  x;
-        for(float i=1.0;i<NUM_TESTS;i++){
-                x=count(i);
-               // printf("sqrt of %lf gives %lf \n",i,x);
+        for(int i=0;i<=NUM_TESTS;i++){
+                x=count((float)i);
+#if PRINTSTATS
+               printf("sqrt of %lf gives %lf \n",i,x);
+#endif
         }
-        end=rdcycle();
-        printf("scie execution took %lu cycles\n",end-start);
+	asm("fence");
+        end=rdcycle()-start;
+        printf("bmark execution took %lu cycles\n",end);
         return 0;
 }
 

@@ -3,15 +3,24 @@
 #include <stdlib.h>
 #include "encoding.h"
 #include <time.h>
-#define MSIZE 64
-#define PRINTSTATS 0
+#define MSIZE 8
+#define PRINTSTATS 1
+#define BMARK 1
+//test for matrix accelerators.
+/*
+Note: The static and inline keywords are used in some of the provided RoCC tests
+and were used for this benchmark and the regex benchmark because it slightly improved performance.
+Its probably due to the inlining but removing the static keyword sometimes led to strange behavior
+*/
+
+//used to check when accelerator is finished
 static inline unsigned long read(int idx)
 {
 	unsigned long value;
 	ROCC_INSTRUCTION_DSS(0, value, 0, idx, 5);
 	return value;
 }
-
+//these functions specify the dimesions of each matrix and their addresses
 static inline void set_x_dim(int l, int w)
 {
 
@@ -44,6 +53,7 @@ static inline void set_out(void *ptr,void *copy)
 void accel();
 void bmark();
 void printm(unsigned long input[MSIZE][MSIZE]);
+//using global variables here for the sake of ease
 unsigned long X[MSIZE][MSIZE];
 unsigned long Y[MSIZE][MSIZE];
 unsigned long Z1[MSIZE][MSIZE];
@@ -58,6 +68,9 @@ void accel(){
         set_y_dim(MSIZE,MSIZE);
         set_addr(&X[0][0],&Y[0][0]);
         set_out(&Z1[0][0],&COPY[0][0]);
+        /*this result value isn't needed but it ensures the compiler doesn't
+          optimise and call the rdcycle function before the accelerator actually finishes
+        */
         result = read(0);
         end=rdcycle();
         printf("results is %lu \n",result);
@@ -67,6 +80,7 @@ void accel(){
         printf("rocc execution took %lu cycles \n",end-start);
 
 }
+//simply performs regular matrix multiplication
 void bmark(){
        unsigned long result;
         unsigned long start,end;
@@ -85,6 +99,7 @@ void bmark(){
         printf("bmark execution took %lu cycles \n",end-start);
 
 }
+//prints the matrix
 void printm(unsigned long input[MSIZE][MSIZE]){
 	for(int i=0;i<MSIZE;i++){
                 for(int j=0;j<MSIZE;j++){
@@ -96,7 +111,10 @@ void printm(unsigned long input[MSIZE][MSIZE]){
 
 }
 int main()
-{
+{       
+        //generates matrices based on MSIZE
+        // seeding doesn't seem to actually do anything since the RTL sets up a fresh
+        // environment each time.
 	srand(time(0));
 	for(int i=0;i<MSIZE;i++){
                 for(int j=0;j<MSIZE;j++){
@@ -112,7 +130,8 @@ int main()
         #endif
 
 	accel();
-	//bmark();
-
+#if BMARK
+	bmark();
+#endif
 	return 0;
 }

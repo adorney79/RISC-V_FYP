@@ -83,9 +83,9 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   io.mem.req.bits.signed := false.B
   io.mem.req.bits.data := 0.U 
   io.mem.req.bits.phys := false.B
-  io.mem.req.bits.dprv := 3.U
+  io.mem.req.bits.dprv := cmd.bits.status.dprv
   
-  cmd.ready := !busy && !stallLoad && !stallResp
+  cmd.ready := !busy && !stallLoad && !stallResp && start=/=0.U
   io.resp.valid := cmd.valid && doResp && !busy
   io.resp.bits.rd := cmd.bits.inst.rd
   
@@ -100,6 +100,7 @@ extends LazyRoCCModuleImp(outer) with HasCoreParameters{
   when(set_addr && !busy && !done){
     start:=cmd.bits.rs1
     stop:=cmd.bits.rs2
+    busy:=true.B
   }
 
   switch(state){
