@@ -46,20 +46,14 @@ Forgive the extremely ugly code but regex.h wasn't supported for bare metal
 */
 unsigned int compute(){
 	unsigned char matches[] = "\"S&amp;P 500\"regularMarketPricevalue=\"";
-	int pointer = 0;
 	int lst_idx = 0;
 	unsigned int guard = 0;
 	int length = sizeof(mini_stonks) / sizeof(char);
 
-	while (!guard)
+	for(int pointer=0;pointer<length;pointer++)
 	{
-		//when EOF reached exit
-		if (pointer == length)
-		{
-			break;
-		}
 		//potential match
-		else if (matches[0] == mini_stonks[pointer])
+		if (matches[0] == mini_stonks[pointer])
 		{
 			lst_idx++;
 			pointer++;
@@ -128,11 +122,7 @@ unsigned int compute(){
 				}
 			}
 		}
-		//continue parsing for potential match
-		else
-		{
-			pointer++;
-		}
+
 	}
 	//EOF reached
 	return guard;
