@@ -6,6 +6,8 @@
 #define MSIZE 8
 #define PRINTSTATS 1
 #define BMARK 1
+#define Transpose 1
+
 //test for matrix accelerators.
 /*
 Note: The static and inline keywords are used in some of the provided RoCC tests
@@ -58,6 +60,7 @@ unsigned long X[MSIZE][MSIZE];
 unsigned long Y[MSIZE][MSIZE];
 unsigned long Z1[MSIZE][MSIZE];
 unsigned long COPY[MSIZE][MSIZE];
+unsigned long COPY2[MSIZE][MSIZE];
 unsigned long Z2[MSIZE][MSIZE];
 
 void accel(){
@@ -99,6 +102,36 @@ void bmark(){
         printf("bmark execution took %lu cycles \n",end-start);
 
 }
+//same as bmark but transposes matrix first
+void transpose(){
+	unsigned long result;
+        unsigned long start,end;
+        start=rdcycle();
+
+	for(int i=0;i<MSIZE;i++){
+                for(int j=0;j<MSIZE;j++){
+			COPY2[j][i]=Y[i][j];
+                }
+        }
+        for(int i=0;i<MSIZE;i++){
+                for(int j=0;j<MSIZE;j++){
+                        for(int k=0;k<MSIZE;k++){
+		
+                                Z2[i][j]+=X[i][k]*COPY2[j][k];
+                        }
+                }
+        }
+        end=rdcycle();
+#if PRINTSTATS
+	printf("copy:\n");
+	printm(COPY2);
+	printf("z2:\n");
+        printm(Z2);
+#endif
+        printf("transpose execution took %lu cycles \n",end-start);
+
+
+}
 //prints the matrix
 void printm(unsigned long input[MSIZE][MSIZE]){
 	for(int i=0;i<MSIZE;i++){
@@ -132,6 +165,9 @@ int main()
 	accel();
 #if BMARK
 	bmark();
+#endif
+#if TRANSPOSE
+	transpose();
 #endif
 	return 0;
 }
