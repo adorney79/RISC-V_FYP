@@ -1,5 +1,6 @@
 # RISC-V_FYP
-
+##
+This is my final year project based around RISC-V and Chipyard. See report.pdf for more details
 ## Setup
 Setting this repo up will require some prior knowledge of Chipyard. Chipyard is also an extremely large repo so I'd advise using a system with roughly
 50GB free space and at least 8GB of RAM.
