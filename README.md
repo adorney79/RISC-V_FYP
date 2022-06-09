@@ -16,7 +16,7 @@ the one provided in the config_files folder. Alternatively just do a diff and ad
 - /config_files: contains build.sbt for adding project to chipyard and the rocket chip configs for each design.
 - /src/main/scala
   - AdaptedClasses.scala: Contains a number of classes from the Rocket chip hierarchy that are adapted to accept an SCIE implementation as input (mostly code from [rocket chip](https://github.com/chipsalliance/rocket-chip) and not my own)
-  - MyRocket.scala: Contains a slightly adapted version of the Rocket class which accepts an SCIE implementation as input (mostly code from rocket chip and not my own)
+  - MyRocket.scala: Contains a slightly adapted version of the Rocket class which accepts an SCIE implementation as input (mostly code from [rocket chip](https://github.com/chipsalliance/rocket-chip) and not my own)
   - RegexRocc.scala: Has the classes for a regular expression accelerator
   - bitcount_accel.scala: A basic RoCC class to test against the popcount instruction
   - bitcount_scie.scala: The SCIE implementation of a popcount instruction
