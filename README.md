@@ -1,6 +1,10 @@
 # RISC-V_FYP
-##
 This is my final year project based around RISC-V and Chipyard. See report.pdf for more details
+
+## Licenses
+This project contains some modified files from the [rocket chip](https://github.com/chipsalliance/rocket-chip) repository.
+for license details on those files see LICENSE.Berkeley and LICENSE.SiFive for more details. For all other license details see LICENSE.md.
+
 ## Setup
 Setting this repo up will require some prior knowledge of Chipyard. Chipyard is also an extremely large repo so I'd advise using a system with roughly
 50GB free space and at least 8GB of RAM.
