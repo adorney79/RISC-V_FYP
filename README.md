@@ -1,5 +1,5 @@
 # RISC-V_FYP
-This is my final year project based around RISC-V and Chipyard. See report.pdf for more details
+This is my final year project based around RISC-V and Chipyard. See Report.pdf for more details
 
 ## Licenses
 This project contains some modified files from the [rocket chip](https://github.com/chipsalliance/rocket-chip) repository.
